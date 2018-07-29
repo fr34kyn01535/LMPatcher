@@ -14,6 +14,7 @@ namespace LMPatcher
     {
         static void Main(string[] args)
         {
+            if (args.Length == 0) args = new string[] { "original.apk" };
             string path = args[0];
 
             using (ZipArchive archive = ZipFile.Open(path, ZipArchiveMode.Update))
@@ -25,63 +26,64 @@ namespace LMPatcher
                     archive.GetEntry(entry).Delete();
                 }
                 byte[] assemblyBytes;
-                using (var stream = new MemoryStream())
+                using(Stream stream = assemblyEntry.Open())
+                using (MemoryStream ms = new MemoryStream())
                 {
-                    assemblyEntry.Open().CopyTo(stream);
-                    assemblyBytes = stream.ToArray();
+                    stream.CopyTo(ms);
+                    assemblyBytes = ms.ToArray();
+                }
+                byte[] password = assemblyBytes.Skip(32).Take(8).ToArray();
+                int passwordIndex = 0;
+                for (int i = 0; i < assemblyBytes.Length; i++)
+                {
+                    if (passwordIndex == 8) passwordIndex = 0;
+                    assemblyBytes[i] ^= password[passwordIndex++];
+                }
 
-                    byte[] password = assemblyBytes.Skip(32).Take(8).ToArray();
-                    int passwordIndex = 0;
-                    for (int i = 0; i < assemblyBytes.Length; i++)
+
+                AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(new MemoryStream(assemblyBytes));
+
+
+                foreach (var patch in Assembly.GetExecutingAssembly().GetTypes().Where(t => t.BaseType.FullName == "LMPatcher.Patch").Select(t => Activator.CreateInstance(t) as Patch))
+                {
+                    try
                     {
-                        if (passwordIndex == 8) passwordIndex = 0;
-                        assemblyBytes[i] ^= password[passwordIndex++];
+                        patch.Assembly = assembly;
+                        patch.Apply();
                     }
-
-
-                    AssemblyDefinition assembly = AssemblyDefinition.ReadAssembly(new MemoryStream(assemblyBytes));
-
-
-                    foreach (var patch in Assembly.GetExecutingAssembly().GetTypes().Where(t => t.BaseType.FullName == "LMPatcher.Patch").Select(t => Activator.CreateInstance(t) as Patch))
+                    catch (Exception ex)
                     {
-                        try
-                        {
-                            patch.Assembly = assembly;
-                            patch.Apply();
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine("Error in " + patch.GetType().Name + ":" + ex.ToString());
+                        Console.WriteLine("Error in " + patch.GetType().Name + ":" + ex.ToString());
 #if DEBUG
-                            Console.ReadLine();
+                        Console.ReadLine();
 #endif
-                            Environment.Exit(1);
-                        }
+                        Environment.Exit(1);
                     }
+                }
 
-                    using (var ms = new MemoryStream())
-                    {
-                        assembly.Write(ms);
-                        assemblyBytes = ms.ToArray();
-                    }
+                using (var ms = new MemoryStream())
+                {
+                    assembly.Write(ms);
+                    assemblyBytes = ms.ToArray();
+                }
 
-                    File.WriteAllBytes("Assembly-CSharp.patched.dll", assemblyBytes);
+                File.WriteAllBytes("Assembly-CSharp.patched.dll", assemblyBytes);
 
-                    passwordIndex = 0;
-                    for (int i = 0; i < assemblyBytes.Length; i++)
-                    {
-                        if (passwordIndex == 8) passwordIndex = 0;
-                        assemblyBytes[i] ^= password[passwordIndex++];
-                    }
+                passwordIndex = 0;
+                for (int i = 0; i < assemblyBytes.Length; i++)
+                {
+                    if (passwordIndex == 8) passwordIndex = 0;
+                    assemblyBytes[i] ^= password[passwordIndex++];
+                }
+                assemblyEntry.Delete();
+                assemblyEntry = archive.CreateEntry("assets/bin/Data/Managed/Assembly-CSharp.dll");
 
-                    stream.SetLength(assemblyBytes.Length);
-                    using (StreamWriter writer = new StreamWriter(stream))
-                    {
-                        writer.Write(assemblyBytes);
-                    }
+                using (var entryStream = assemblyEntry.Open())
+                using (var streamWriter = new StreamWriter(entryStream))
+                {
+                    streamWriter.Write(assemblyBytes);
                 }
             }
         }
     }
-
 }
