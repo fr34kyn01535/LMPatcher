@@ -1,6 +1,7 @@
 ﻿using Mono.Cecil;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -84,6 +85,27 @@ namespace LMPatcher
                     streamWriter.Write(assemblyBytes);
                 }
             }
+            Process process = new Process();
+            process.StartInfo.FileName = @"C:\Windows\System32\bash.exe";
+            process.StartInfo.Arguments = "./patch.sh";
+            process.StartInfo.CreateNoWindow = true;
+            process.StartInfo.UseShellExecute = false;
+            process.StartInfo.RedirectStandardError = true;
+            process.StartInfo.RedirectStandardOutput = true;
+            process.Start();
+            process.OutputDataReceived += (object sender, DataReceivedEventArgs e) =>
+                Console.WriteLine("output>>" + e.Data);
+            process.BeginOutputReadLine();
+
+            process.ErrorDataReceived += (object sender, DataReceivedEventArgs e) =>
+                Console.WriteLine("error>>" + e.Data);
+            process.BeginErrorReadLine();
+
+            process.WaitForExit();
+#if DEBUG
+            Console.WriteLine("Done...");
+            Console.ReadKey();
+#endif
         }
     }
 }
